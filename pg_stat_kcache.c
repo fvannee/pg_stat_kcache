@@ -55,8 +55,8 @@ typedef uint32 pgsk_queryid;
 #endif
 
 #define PG_STAT_KCACHE_COLS_V2_0	7
-#define PG_STAT_KCACHE_COLS_V2_1	15
-#define PG_STAT_KCACHE_COLS			15	/* maximum of above */
+#define PG_STAT_KCACHE_COLS_V2_1	16
+#define PG_STAT_KCACHE_COLS			16	/* maximum of above */
 
 #define USAGE_INCREASE			(1.0)
 #define USAGE_DECREASE_FACTOR	(0.99)	/* decreased every pgsk_entry_dealloc */
@@ -128,6 +128,7 @@ typedef struct pgskHashKey
 	Oid			userid;			/* user OID */
 	Oid			dbid;			/* database OID */
 	pgsk_queryid		queryid;		/* query identifier */
+	char applicationname[NAMEDATALEN];
 } pgskHashKey;
 
 /*
@@ -523,6 +524,10 @@ pgsk_entry_store(pgsk_queryid queryId, pgskCounters counters)
 	key.userid = GetUserId();
 	key.dbid = MyDatabaseId;
 	key.queryid = queryId;
+	if (application_name != NULL)
+		strncpy(key.applicationname, application_name, NAMEDATALEN);
+	else
+		key.applicationname[0] = 0;
 
 	/* Lookup the hash table entry with shared lock. */
 	LWLockAcquire(pgsk->lock, LW_SHARED);
@@ -759,7 +764,8 @@ pgsk_hash_fn(const void *key, Size keysize)
 
 	return hash_uint32((uint32) k->userid) ^
 		hash_uint32((uint32) k->dbid) ^
-		hash_uint32((uint32) k->queryid);
+		hash_uint32((uint32) k->queryid) ^
+		(uint32)DatumGetUInt64(hash_any_extended((const unsigned char *) k->applicationname, strlen(k->applicationname), 0));
 }
 
 /*
@@ -773,7 +779,8 @@ pgsk_match_fn(const void *key1, const void *key2, Size keysize)
 
 	if (k1->userid == k2->userid &&
 		k1->dbid == k2->dbid &&
-		k1->queryid == k2->queryid)
+		k1->queryid == k2->queryid &&
+		strncmp(k1->applicationname, k2->applicationname, NAMEDATALEN) == 0)
 		return 0;
 	else
 		return 1;
@@ -880,6 +887,8 @@ pg_stat_kcache_internal(FunctionCallInfo fcinfo, pgskVersion api_version)
 		values[i++] = Int64GetDatum(entry->key.queryid);
 		values[i++] = ObjectIdGetDatum(entry->key.userid);
 		values[i++] = ObjectIdGetDatum(entry->key.dbid);
+		if (api_version == PGSK_V2_1)
+			values[i++] = CStringGetTextDatum(entry->key.applicationname);
 #ifdef HAVE_GETRUSAGE
 		reads = tmp.reads * RUSAGE_BLOCK_SIZE;
 		writes = tmp.writes * RUSAGE_BLOCK_SIZE;

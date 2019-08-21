@@ -13,6 +13,7 @@ CREATE FUNCTION pg_stat_kcache(
     OUT queryid bigint,
     OUT userid      oid,
     OUT dbid        oid,
+    OUT application_name        text,
     OUT reads       bigint,             /* total reads, in bytes */
     OUT writes      bigint,             /* total writes, in bytes */
     OUT user_time   double precision,   /* total user CPU time used */
